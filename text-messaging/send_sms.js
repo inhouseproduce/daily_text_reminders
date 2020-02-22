@@ -1,8 +1,9 @@
+
 const CronJob = require('cron').CronJob;
 const CronTime = require('cron').CronTime;
-const Messenger = require('../modules/Messenger.js');
 const fetch = require("node-fetch");
 const loadTextReminders = require('./getTextReminders.js').getTextReminders;
+const loadClients = require('./getTextReminders.js').getClientInfo;
 
 var cronJobs = {};
 
@@ -15,16 +16,17 @@ module.exports = (  ) => {
 
   //at midnight, recheck the jobs 
   new CronJob("0 0 0 * * *", main,  null, true, "America/Los_Angeles");
+
 };
 
 function main()
 {
-    console.log("running in main()", Messenger);
-    Messenger.find({}, function (err, client_list) 
-    {
-      const client_data = JSON.parse(JSON.stringify(client_list[0]));
 
-      //create newClientList from mongodb database in case of 
+    console.log("in main")
+
+    loadClients().then(client_data =>{
+
+      //create newClientList from database in case of 
       //    newly added or deleted client
       var newClientList = [];
       client_data.clients.forEach(client =>
@@ -33,16 +35,16 @@ function main()
         }
       );
 
-      //compare the previous users stored already to the current mongodb
-      //database and remove users that are no longer in the mongodb database
+      //compare the previous users stored already to the current 
+      //    database and remove users that are no longer in the database
       Object.keys(cronJobs).forEach(client =>
         { 
           if (!(newClientList).includes(client))
          {    
 
           //for debugging
-          console.log("client " + client + " no longer in mongodb database so they're cronjobs are getting stopped");
-          
+          //   console.log("client " + client + " no longer in database so they're cronjobs are getting stopped");
+          console.log("client's cron jobs have been stopped because they are no longer in the database")
           cronJobs[client]['seeding'].stop();
           cronJobs[client]['daily_check'].stop();         
         }
@@ -80,16 +82,15 @@ function main()
       }
 
       });
-    });
+
+    })
 
 }
 
 function randomIndex(arrayLength)
 {
   // returns a random number
-
   return Math.floor(Math.random() * arrayLength);
-
 }
 
 function sendMessage(phoneNo, message)

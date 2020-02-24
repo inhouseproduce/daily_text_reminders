@@ -91,17 +91,16 @@ function convertToJSON(data){
     data.forEach(element => {
 
       var clientEntry = {}
-      clientEntry['name'] = element[0] || 'no name'
-      clientEntry['client'] = element[1] || 'no client'
-      clientEntry['phoneNo'] = element[2] || 'no number'
-      clientEntry['schedule_seeding'] = element[3] || 'no daily schedule'
-      clientEntry['schedule_daily_checkups'] = element[4] || 'no seeding schedule'
+      clientEntry['name'] = element[0] || 'null'
+      clientEntry['client'] = element[1] || 'null'
+      clientEntry['phoneNo'] = element[2] || 'null'
+      clientEntry['schedule_seeding'] = element[3] || 'null'
+      clientEntry['schedule_daily_checkups'] = element[4] || 'null'
 
       clientJSON['clients'].push(clientEntry)
     });
     return clientJSON
 }
-
 
 module.exports = {
   getTextReminders: loadTextReminders,

@@ -16,8 +16,78 @@ module.exports = (  ) => {
 
   //at midnight, recheck the jobs 
   new CronJob("0 0 0 * * *", main,  null, true, "America/Los_Angeles");
-
 };
+
+function clientsFromDatabase(client_data)
+{
+  //return array of client name/ids from database at current moment
+
+  var newClientList = [];
+  client_data.clients.forEach(client =>
+    newClientList.push(client.name+client.client)
+  );
+  return newClientList
+}
+
+function removeMissingClients(newClientList)
+{
+  //removes clients that previously had cron jobs but no longer in database at current moment
+
+  Object.keys(cronJobs).forEach(client =>
+  { 
+      if (!(newClientList).includes(client))
+      {    
+        console.log("client's cron jobs have been stopped because they are no longer in the database")
+
+        if (cronJobs[client]['seeding'] != 'null')
+          cronJobs[client]['seeding'].stop();
+
+        if (cronJobs[client]['daily_check'] != 'null')
+          cronJobs[client]['daily_check'].stop();         
+      }
+  });
+
+}
+
+function rescheduleCrobJob(client, schedule, clientKey, customerPhone, type)
+{
+    //if there is a schedule in the database for the client, schedule it
+    if(schedule != "null")
+    { 
+      console.log("   -new ", type, " schduled")
+
+      if(cronJobs[clientKey][type] != "null")
+      {      
+          cronJobs[clientKey][type].setTime(new CronTime(schedule, "America/Los_Angeles"));
+          cronJobs[clientKey][type].start();
+      }
+      else
+        cronJobs[clientKey][type] = new CronJob(schedule, messageToCustomer.bind(this, customerPhone, type, client.name, client.client),  null, true, "America/Los_Angeles");
+    }
+    else
+    {
+      console.log("   -no ", type, " schduled")
+      //if the client already had a cron job and no longer has one in the current database, stop the cron job
+      if (cronJobs[clientKey][type] != "null")  
+          cronJobs[clientKey][type].stop()
+    }
+}
+
+
+function scheduleCronJob(client, schedule, clientKey, customerPhone, type)
+{
+  if(schedule != "null")
+  { 
+    console.log("   -", type, "  scheduled")
+    cronJobs[clientKey][type] = new CronJob(schedule, messageToCustomer.bind(this, customerPhone, type, client.name, client.client),  null, true, "America/Los_Angeles");
+  }
+  else
+  {
+    console.log("   -no ", type, "  scheduled")
+    cronJobs[clientKey][type] = "null"
+  }
+
+}
 
 function main()
 {
@@ -28,61 +98,37 @@ function main()
 
       //create newClientList from database in case of 
       //    newly added or deleted client
-      var newClientList = [];
-      client_data.clients.forEach(client =>
-        {
-          newClientList.push(client.name+client.client);
-        }
-      );
+      var newClientList = clientsFromDatabase(client_data)
 
       //compare the previous users stored already to the current 
       //    database and remove users that are no longer in the database
-      Object.keys(cronJobs).forEach(client =>
-        { 
-          if (!(newClientList).includes(client))
-         {    
-
-          //for debugging
-          //   console.log("client " + client + " no longer in database so they're cronjobs are getting stopped");
-          console.log("client's cron jobs have been stopped because they are no longer in the database")
-          cronJobs[client]['seeding'].stop();
-          cronJobs[client]['daily_check'].stop();         
-        }
-       });
+      removeMissingClients(newClientList)
        
 
       //add new clients or create new schedule for an existing client
       client_data.clients.forEach(client => 
       {
         var clientKey = client.name + client.client;
+        const customerPhone = client.phoneNo;
 
+        //if the current client already has a cron job set up, reschedule the cron job with a new time
         if (Object.keys(cronJobs).includes(clientKey))
         {
-          //for debugging
-          // console.log("new schedule for " + client.name + " at " + client.schedule_seeding + " and " + client.schedule_daily_checkups);
           console.log("new scheduling at " + client.schedule_seeding + " and " + client.schedule_daily_checkups);
 
-          cronJobs[clientKey]['seeding'].setTime(new CronTime(client.schedule_seeding, "America/Los_Angeles"));
-          cronJobs[clientKey]['daily_check'].setTime(new CronTime(client.schedule_daily_checkups, "America/Los_Angeles"));
-        
-          cronJobs[clientKey]['seeding'].start();
-          cronJobs[clientKey]['daily_check'].start();
-
+          rescheduleCrobJob(client, client.schedule_seeding, clientKey, customerPhone, 'seeding')
+          rescheduleCrobJob(client, client.schedule_daily_checkups, clientKey, customerPhone, 'daily_check')
         }
         else
         {
-          //for debugging
-          // console.log("new client named " + client.name + " at " + client.schedule_seeding + " and " + client.schedule_daily_checkups);
+          //this is for new clients from the database
           console.log("new client with schedules at " + client.schedule_seeding + " and " + client.schedule_daily_checkups);
-
-          const customerPhone = client.phoneNo;
+         
           cronJobs[clientKey] = {};
-          cronJobs[clientKey]['seeding'] = new CronJob(client.schedule_seeding, messageToCustomer.bind(this, customerPhone, 'seeding', client.name, client.client),  null, true, "America/Los_Angeles");
-          cronJobs[clientKey]['daily_check'] = new CronJob(client.schedule_daily_checkups, messageToCustomer.bind(this, customerPhone, 'daily_check', client.name, client.client),  null, true,"America/Los_Angeles");
-      }
-
+          scheduleCronJob(client, client.schedule_seeding, clientKey, customerPhone, "seeding")
+          scheduleCronJob(client, client.schedule_daily_checkups, clientKey, customerPhone, "daily_check")
+        }
       });
-
     })
 
 }
@@ -107,7 +153,6 @@ function sendMessage(phoneNo, message)
     },
     body: JSON.stringify({"to":phoneNo,"body": message})
   }).catch(err => console.error("Here's an error from sendMessage(): " + err));
-
 }
 
 
@@ -117,17 +162,12 @@ function messageToCustomer(customerPhone, typeOfMessage, name, client)
   
   loadTextReminders().then(message_array => {
       var message = "";
+
       if (typeOfMessage === "seeding")
-      {
         message = message_array[1][randomIndex(message_array[1].length)];
-      }
       else
-      {
         message =  message_array[0][randomIndex(message_array[0].length)];
-      }
 
       sendMessage(customerPhone, message.replace('%name%', name).replace('%client%', client));
-
     });
-
 }
